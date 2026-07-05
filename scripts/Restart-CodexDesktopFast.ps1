@@ -49,6 +49,18 @@ function Write-RunLog {
     } catch {}
 }
 
+function ConvertTo-ProcessArgument {
+    param([string]$Value)
+    if ($null -eq $Value) { return '""' }
+    if ($Value -notmatch '[\s"]') { return $Value }
+    return '"' + ($Value -replace '"', '\"') + '"'
+}
+
+function Join-ProcessArguments {
+    param([string[]]$ArgumentList)
+    return (@($ArgumentList) | ForEach-Object { ConvertTo-ProcessArgument ([string]$_) }) -join ' '
+}
+
 function Add-WindowApi {
     if ('CodexWindowTools.WindowApi' -as [type]) { return }
     Add-Type -TypeDefinition @'
@@ -127,7 +139,7 @@ function Start-HideWatcher {
     if ($TargetPidFilePath) {
         $args += @('-TargetPidFile', $TargetPidFilePath)
     }
-    $p = Start-Process -FilePath $ps -ArgumentList $args -WindowStyle Hidden -PassThru
+    $p = Start-Process -FilePath $ps -ArgumentList (Join-ProcessArguments $args) -WindowStyle Hidden -PassThru
     Write-RunLog @{ type = 'hide-watcher-start'; pid = $p.Id; seconds = $Seconds; target_pid_file = $TargetPidFilePath }
 }
 
@@ -274,7 +286,7 @@ function Start-WorkerCommand {
         $args += @('-WorkerArguments') + @($ArgumentList)
     }
     try {
-        $p = Start-Process -FilePath $ps -ArgumentList $args -WindowStyle Hidden -PassThru
+        $p = Start-Process -FilePath $ps -ArgumentList (Join-ProcessArguments $args) -WindowStyle Hidden -PassThru
         Write-RunLog @{ type = 'worker-start'; worker = $Type; pid = $p.Id; file = $FilePath; args = @($ArgumentList); timeout_seconds = $TimeoutSeconds }
     } catch {
         Write-RunLog @{ type = 'worker-start-failed'; worker = $Type; file = $FilePath; args = @($ArgumentList); error = $_.Exception.Message }
@@ -476,7 +488,7 @@ function Start-CodexDesktopHidden {
             $targetPidPath = Join-Path $LogRoot ('codex-desktop-target-pids-' + $script:RunId + '.txt')
             Ensure-Dir -Path (Split-Path -Parent $targetPidPath)
             Start-HideWatcher -Seconds $HideWatchSeconds -TargetPidFilePath $targetPidPath
-            $p = Start-Process -FilePath $DesktopExe -ArgumentList @($WorkspacePath) -WindowStyle Minimized -PassThru
+            $p = Start-Process -FilePath $DesktopExe -ArgumentList (Join-ProcessArguments @($WorkspacePath)) -WindowStyle Minimized -PassThru
             [string]$p.Id | Set-Content -LiteralPath $targetPidPath -Encoding ASCII
             $script:DesktopTargetPids = @($p.Id)
             $null = Hide-CodexWindows -MinimizeOnly -TargetPids @($p.Id)
@@ -568,7 +580,7 @@ function Start-AutoContinueSessions {
                 '-Command',
                 '& "' + ($CodexCmd -replace '"','\"') + '" resume "' + $session.id + '" "' + ($prompt -replace '"','\"') + '" --no-alt-screen *> "' + ((Join-Path $LogRoot ('auto-continue-' + $session.id + '.log')) -replace '"','\"') + '"'
             )
-            $p = Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList $args -WindowStyle Hidden -PassThru
+            $p = Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList (Join-ProcessArguments $args) -WindowStyle Hidden -PassThru
             Write-RunLog @{ type = 'auto-continue-start'; ok = $true; pid = $p.Id; session_id = $session.id; thread_name = $session.thread_name; transcript = $session.path }
         } catch {
             Write-RunLog @{ type = 'auto-continue-start'; ok = $false; session_id = $session.id; error = $_.Exception.Message }
@@ -593,7 +605,7 @@ function Start-AutoContinueWorker {
         '-AutoContinueOnly'
     )
     try {
-        $p = Start-Process -FilePath $ps -ArgumentList $args -WindowStyle Hidden -PassThru
+        $p = Start-Process -FilePath $ps -ArgumentList (Join-ProcessArguments $args) -WindowStyle Hidden -PassThru
         Write-RunLog @{ type = 'auto-continue-worker-start'; ok = $true; pid = $p.Id }
     } catch {
         Write-RunLog @{ type = 'auto-continue-worker-start'; ok = $false; error = $_.Exception.Message }
@@ -614,7 +626,7 @@ function Start-SetupWorker {
     )
     if ($NoStartupSuppressor) { $args += '-NoStartupSuppressor' }
     try {
-        $p = Start-Process -FilePath $ps -ArgumentList $args -WindowStyle Hidden -PassThru
+        $p = Start-Process -FilePath $ps -ArgumentList (Join-ProcessArguments $args) -WindowStyle Hidden -PassThru
         Write-RunLog @{ type = 'setup-worker-start'; ok = $true; pid = $p.Id }
     } catch {
         Write-RunLog @{ type = 'setup-worker-start'; ok = $false; error = $_.Exception.Message }

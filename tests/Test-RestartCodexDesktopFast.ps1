@@ -55,6 +55,15 @@ if (Test-Path -LiteralPath $scriptPath -PathType Leaf) {
             Add-Failure 'Write-RunLog can still block on retry/sleep instead of best-effort append.'
         }
     }
+    if ($scriptText -notmatch 'function ConvertTo-ProcessArgument' -or $scriptText -notmatch 'function Join-ProcessArguments') {
+        Add-Failure 'Process launch argument quoting helpers are missing.'
+    }
+    if ($scriptText -match 'Start-Process[^\r\n]+-ArgumentList \$args' -or $scriptText -match 'Start-Process[^\r\n]+-ArgumentList @\(\$WorkspacePath\)') {
+        Add-Failure 'Start-Process still uses raw argument arrays for worker or workspace paths.'
+    }
+    if ($scriptText -notmatch 'Join-ProcessArguments \$args' -or $scriptText -notmatch 'Join-ProcessArguments @\(\$WorkspacePath\)') {
+        Add-Failure 'Start-Process launches are not consistently using quoted argument strings.'
+    }
     if ($scriptText -match "remote-control','stop") {
         Add-Failure 'Foreground remote-control path still stops remote-control before start.'
     }
