@@ -31,6 +31,54 @@ $script:LogPath = Join-Path $LogRoot 'restart-codex-desktop-fast.jsonl'
 $script:RunId = [guid]::NewGuid().ToString()
 $script:DesktopTargetPids = @()
 
+if ($SelfTest) {
+    $codexCmd = $null
+    $codexCandidates = @(
+        (Join-Path $env:APPDATA 'npm\codex.cmd'),
+        (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\codex.exe')
+    )
+    foreach ($candidate in $codexCandidates) {
+        if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+            $codexCmd = $candidate
+            break
+        }
+    }
+    if (-not $codexCmd) {
+        foreach ($dir in @($env:PATH -split ';' | Where-Object { $_ })) {
+            foreach ($name in @('codex.cmd','codex.exe','codex.bat')) {
+                $candidate = Join-Path $dir $name
+                if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                    $codexCmd = $candidate
+                    break
+                }
+            }
+            if ($codexCmd) { break }
+        }
+    }
+
+    $desktopCachePath = Join-Path $script:PackageRoot 'config\CodexDesktopExePath.txt'
+    $desktopExe = if (Test-Path -LiteralPath $desktopCachePath -PathType Leaf) {
+        Get-Content -LiteralPath $desktopCachePath -TotalCount 1 -ErrorAction SilentlyContinue
+    } else {
+        $null
+    }
+    $configPath = Join-Path $CodexHome 'config.toml'
+    $checks = [ordered]@{
+        script_path = $PSCommandPath
+        package_root = $script:PackageRoot
+        codex_cmd = $codexCmd
+        codex_cmd_exists = [bool]($codexCmd -and (Test-Path -LiteralPath $codexCmd -PathType Leaf))
+        desktop_cache = $desktopCachePath
+        desktop_exe = $desktopExe
+        desktop_exe_exists = [bool]($desktopExe -and (Test-Path -LiteralPath $desktopExe -PathType Leaf))
+        config_exists = [bool](Test-Path -LiteralPath $configPath -PathType Leaf)
+        log_path = $script:LogPath
+    }
+    $checks.GetEnumerator() | ForEach-Object { '{0}={1}' -f $_.Key, $_.Value }
+    if (-not $checks.codex_cmd_exists -or -not $checks.desktop_exe_exists -or -not $checks.config_exists) { exit 1 }
+    exit 0
+}
+
 function Ensure-Dir {
     param([string]$Path)
     if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
@@ -81,6 +129,18 @@ function ConvertTo-ProcessArgument {
 function Join-ProcessArguments {
     param([string[]]$ArgumentList)
     return (@($ArgumentList) | ForEach-Object { ConvertTo-ProcessArgument ([string]$_) }) -join ' '
+}
+
+function Find-CommandOnPathFast {
+    param([string[]]$Names)
+    $pathParts = @($env:PATH -split ';' | Where-Object { $_ })
+    foreach ($dir in $pathParts) {
+        foreach ($name in $Names) {
+            $candidate = Join-Path $dir $name
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+        }
+    }
+    return $null
 }
 
 function Add-WindowApi {
@@ -197,18 +257,21 @@ function Resolve-CodexCommand {
     foreach ($candidate in $candidates) {
         if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) { return $candidate }
     }
-    $cmd = Get-Command codex -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
-    return $null
+    return Find-CommandOnPathFast -Names @('codex.cmd','codex.exe','codex.bat')
 }
 
 function Resolve-CodexDesktopExe {
-    param([switch]$AllowSlow)
+    param(
+        [switch]$AllowSlow,
+        [switch]$CacheOnly
+    )
     $cachePath = Join-Path $script:PackageRoot 'config\CodexDesktopExePath.txt'
     if (Test-Path -LiteralPath $cachePath -PathType Leaf) {
         $cached = (Get-Content -LiteralPath $cachePath -ErrorAction SilentlyContinue | Select-Object -First 1)
         if ($cached -and (Test-Path -LiteralPath $cached -PathType Leaf)) { return $cached }
     }
+
+    if ($CacheOnly) { return $null }
 
     $running = Get-Process -Name Codex -ErrorAction SilentlyContinue |
         Where-Object { $_.Path -and $_.Path -match '\\app\\Codex\.exe$' } |
@@ -335,11 +398,7 @@ function Resolve-AdbExe {
     foreach ($candidate in $candidates) {
         if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) { return $candidate }
     }
-    $cmd = Get-Command adb.exe -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
-    $cmd = Get-Command adb -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
-    return $null
+    return Find-CommandOnPathFast -Names @('adb.exe','adb.cmd','adb.bat')
 }
 
 function Get-SavedAndroidEndpoints {
@@ -655,34 +714,6 @@ function Start-SetupWorker {
     }
 }
 
-function Invoke-SelfTest {
-    $codexCmd = Resolve-CodexCommand
-    $desktopExe = Resolve-CodexDesktopExe
-    $configPath = Join-Path $CodexHome 'config.toml'
-    $checks = [ordered]@{
-        script_path = $PSCommandPath
-        codex_home = $CodexHome
-        codex_cmd = $codexCmd
-        codex_cmd_exists = [bool]($codexCmd -and (Test-Path -LiteralPath $codexCmd -PathType Leaf))
-        desktop_exe = $desktopExe
-        desktop_exe_exists = [bool]($desktopExe -and (Test-Path -LiteralPath $desktopExe -PathType Leaf))
-        config_exists = [bool](Test-Path -LiteralPath $configPath -PathType Leaf)
-        remote_control_configured = $false
-        helper_session_prewarm = [bool](Test-Path -LiteralPath (Join-Path $CodexHome 'scripts\CodexSessionLoadPrewarm.ps1') -PathType Leaf)
-        helper_mobile_prewarm = [bool](Test-Path -LiteralPath (Join-Path $CodexHome 'scripts\CodexMobileConnectivityPrewarm.ps1') -PathType Leaf)
-        helper_android_health = [bool](Test-Path -LiteralPath (Join-Path $CodexHome 'scripts\Test-CodexAndroidStartupHealth.ps1') -PathType Leaf)
-        log_path = $script:LogPath
-    }
-    if ($checks.config_exists) {
-        $text = Get-Content -LiteralPath $configPath -Raw
-        $checks.remote_control_configured = [bool](($text -match '(?m)^remote_connections\s*=\s*true\s*$') -and ($text -match '(?m)^remote_control\s*=\s*true\s*$'))
-    }
-    Write-RunLog @{ type = 'self-test'; checks = $checks }
-    $checks.GetEnumerator() | ForEach-Object { '{0}={1}' -f $_.Key, $_.Value }
-    if (-not $checks.codex_cmd_exists -or -not $checks.config_exists -or -not $checks.remote_control_configured) { exit 1 }
-    exit 0
-}
-
 if ($SuppressOnly) {
     Invoke-HideLoop -Seconds $HideWatchSeconds
     exit 0
@@ -705,10 +736,6 @@ if ($SetupOnly) {
     Ensure-AndroidAutoConnectPersistence
     Invoke-Prewarm
     exit 0
-}
-
-if ($SelfTest) {
-    Invoke-SelfTest
 }
 
 $codexCmd = Resolve-CodexCommand

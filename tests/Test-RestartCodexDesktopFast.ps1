@@ -61,6 +61,9 @@ if (Test-Path -LiteralPath $scriptPath -PathType Leaf) {
     if ($scriptText -notmatch 'Text\.StringBuilder' -or $scriptText -notmatch '\$backslashes \* 2' -or $scriptText -notmatch '\$backslashes = 0') {
         Add-Failure 'PowerShell process argument quoting is not backslash-aware.'
     }
+    if ($scriptText -notmatch 'function Find-CommandOnPathFast' -or $scriptText -match 'Get-Command\s+(codex|adb)') {
+        Add-Failure 'Fast command resolution can still fall through to slow Get-Command discovery.'
+    }
     if ($scriptText -match 'Start-Process[^\r\n]+-ArgumentList \$args' -or $scriptText -match 'Start-Process[^\r\n]+-ArgumentList @\(\$WorkspacePath\)') {
         Add-Failure 'Start-Process still uses raw argument arrays for worker or workspace paths.'
     }
@@ -107,14 +110,28 @@ if (Test-Path -LiteralPath $scriptPath -PathType Leaf) {
     if ($scriptText -notmatch 'Start-AutoContinueWorker' -or $scriptText -notmatch 'AutoContinueOnly') {
         Add-Failure 'Auto-continue scanning is not detached into a hidden worker.'
     }
+    $selfTestIndex = $scriptText.IndexOf('if ($SelfTest)')
+    $firstFunctionIndex = $scriptText.IndexOf('function Ensure-Dir')
+    $mainStartIndex = $scriptText.LastIndexOf('$codexCmd = Resolve-CodexCommand')
+    if ($selfTestIndex -lt 0 -or $firstFunctionIndex -lt 0 -or $mainStartIndex -lt 0 -or $selfTestIndex -gt $firstFunctionIndex) {
+        Add-Failure 'SelfTest path is not an early fast path before function loading.'
+    } else {
+        $selfTestText = $scriptText.Substring($selfTestIndex, $firstFunctionIndex - $selfTestIndex)
+        if ($selfTestText -notmatch 'exit 0' -or $selfTestText -notmatch 'exit 1' -or $selfTestText -match 'Get-Process|Get-AppxPackage|Write-RunLog') {
+            Add-Failure 'SelfTest path is not bounded or can still enter live restart diagnostics.'
+        }
+    }
     if ($scriptText -notmatch 'Start-SetupWorker' -or $scriptText -notmatch 'SetupOnly') {
         Add-Failure 'Startup/config/Android/prewarm setup is not detached into a hidden worker.'
     }
     if ($scriptText -notmatch 'CodexDesktopExePath\.txt' -or $scriptText -notmatch 'Update-CodexDesktopExeCache') {
         Add-Failure 'Codex Desktop executable resolution is not backed by a package-local cache.'
     }
-    if ($scriptText -notmatch 'param\(\[switch\]\$AllowSlow\)' -or $scriptText -notmatch 'if \(-not \$AllowSlow\) \{ return \$null \}') {
+    if ($scriptText -notmatch '\[switch\]\$AllowSlow' -or $scriptText -notmatch 'if \(-not \$AllowSlow\) \{ return \$null \}') {
         Add-Failure 'Slow AppX desktop resolution is not gated behind an explicit switch.'
+    }
+    if ($scriptText -notmatch '\[switch\]\$CacheOnly') {
+        Add-Failure 'Desktop resolver no longer has a cache-only mode for diagnostics.'
     }
     $mainResolveIndex = $scriptText.LastIndexOf('$desktopExe = Resolve-CodexDesktopExe')
     if ($mainResolveIndex -lt 0 -or $scriptText.Substring($mainResolveIndex, [Math]::Min(80, $scriptText.Length - $mainResolveIndex)) -match 'AllowSlow') {
