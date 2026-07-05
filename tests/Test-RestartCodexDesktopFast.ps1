@@ -87,8 +87,8 @@ if (Test-Path -LiteralPath $scriptPath -PathType Leaf) {
     if ($scriptText -notmatch 'TimeoutSeconds 8' -or $scriptText -notmatch 'TimeoutSeconds 10') {
         Add-Failure 'Expected bounded remote/Android timeout ceilings were not found.'
     }
-    if ($scriptText -notmatch 'ElapsedMilliseconds -lt 850') {
-        Add-Failure 'Desktop force-stop path does not enforce the sub-second close budget.'
+    if ($scriptText -notmatch 'ElapsedMilliseconds -lt 650' -or $scriptText -match 'ElapsedMilliseconds -lt 850') {
+        Add-Failure 'Desktop force-stop path does not keep enough margin under the sub-second close budget.'
     }
     if ($scriptText -notmatch 'ShowWindowAsync' -or $scriptText -notmatch 'MinimizeOnly') {
         Add-Failure 'GUI suppressor/minimize path is missing.'

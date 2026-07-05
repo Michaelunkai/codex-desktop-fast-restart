@@ -441,8 +441,8 @@ function Stop-CodexDesktop {
     do {
         $remaining = @(Get-Process -Name Codex -ErrorAction SilentlyContinue)
         if ($remaining.Count -eq 0) { break }
-        Start-Sleep -Milliseconds 25
-    } while ($sw.ElapsedMilliseconds -lt 850)
+        Start-Sleep -Milliseconds 15
+    } while ($sw.ElapsedMilliseconds -lt 650)
     $sw.Stop()
     Write-RunLog @{ type = 'process-stop-summary'; elapsed_ms = $sw.ElapsedMilliseconds; remaining = @($remaining | Select-Object Id,ProcessName,Path) }
 }
