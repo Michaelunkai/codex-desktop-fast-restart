@@ -240,9 +240,11 @@ function Start-WorkerCommand {
         '-LogRoot', $LogRoot,
         '-WorkerType', $Type,
         '-WorkerFilePath', $FilePath,
-        '-WorkerTimeoutSeconds', ([string][Math]::Max(1, $TimeoutSeconds)),
-        '-WorkerArguments'
-    ) + @($ArgumentList)
+        '-WorkerTimeoutSeconds', ([string][Math]::Max(1, $TimeoutSeconds))
+    )
+    if ($ArgumentList -and $ArgumentList.Count -gt 0) {
+        $args += @('-WorkerArguments') + @($ArgumentList)
+    }
     try {
         $p = Start-Process -FilePath $ps -ArgumentList $args -WindowStyle Hidden -PassThru
         Write-RunLog @{ type = 'worker-start'; worker = $Type; pid = $p.Id; file = $FilePath; args = @($ArgumentList); timeout_seconds = $TimeoutSeconds }

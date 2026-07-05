@@ -59,6 +59,9 @@ if (Test-Path -LiteralPath $scriptPath -PathType Leaf) {
     if ($scriptText -notmatch 'Test-AdbHasAuthorizedDevice' -or $scriptText -notmatch 'saved-endpoint') {
         Add-Failure 'Android fast reconnect worker does not verify authorized device recovery.'
     }
+    if (-not $scriptText.Contains('if ($ArgumentList -and $ArgumentList.Count -gt 0)') -or -not $scriptText.Contains('@(''-WorkerArguments'') + @($ArgumentList)')) {
+        Add-Failure 'Worker launcher can still emit a dangling -WorkerArguments parameter for empty-argument workers.'
+    }
     if ($scriptText -notmatch 'Start-WorkerCommand' -or $scriptText -notmatch 'WorkerTimeoutSeconds') {
         Add-Failure 'Restart helper does not contain bounded hidden worker support.'
     }
