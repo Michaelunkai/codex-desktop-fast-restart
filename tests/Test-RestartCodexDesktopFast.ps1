@@ -65,6 +65,15 @@ if (Test-Path -LiteralPath $scriptPath -PathType Leaf) {
     if ($scriptText -notmatch 'ShowWindowAsync' -or $scriptText -notmatch 'MinimizeOnly') {
         Add-Failure 'GUI suppressor/minimize path is missing.'
     }
+    if ($scriptText -notmatch '\[string\]\$TargetPidFile' -or $scriptText -notmatch 'TargetPids' -or $scriptText -notmatch 'DesktopTargetPids') {
+        Add-Failure 'GUI suppressor is not scoped to the package-launched Codex process.'
+    }
+    if ($scriptText -match '\$StartupSuppressSeconds\s*=\s*300') {
+        Add-Failure 'Startup suppressor still uses a long broad suppression window.'
+    }
+    if ($scriptText -notmatch 'Hide-CodexWindows -MinimizeOnly -TargetPids \$script:DesktopTargetPids') {
+        Add-Failure 'Final GUI minimize call is not target-scoped.'
+    }
     if ($scriptText -match 'USERPROFILE\\\.codex\\logs' -or $scriptText -match '\$env:USERPROFILE\\\.codex\\logs') {
         Add-Failure 'Script still writes restart or auto-continue logs under the C-drive Codex home.'
     }

@@ -4,7 +4,7 @@ param(
     [string]$LogRoot = '',
     [string]$WorkspacePath = (Get-Location).Path,
     [int]$HideWatchSeconds = 35,
-    [int]$StartupSuppressSeconds = 300,
+    [int]$StartupSuppressSeconds = 10,
     [int]$RecentSessionMinutes = 180,
     [int]$MaxAutoContinueSessions = 8,
     [switch]$NoDesktopRestart,
@@ -14,6 +14,7 @@ param(
     [switch]$SuppressOnly,
     [switch]$SelfTest,
     [switch]$AutoContinueOnly,
+    [string]$TargetPidFile = '',
     [string]$WorkerType = '',
     [string]$WorkerFilePath = '',
     [int]$WorkerTimeoutSeconds = 10,
@@ -27,6 +28,7 @@ if (-not $LogRoot) {
 }
 $script:LogPath = Join-Path $LogRoot 'restart-codex-desktop-fast.jsonl'
 $script:RunId = [guid]::NewGuid().ToString()
+$script:DesktopTargetPids = @()
 
 function Ensure-Dir {
     param([string]$Path)
@@ -82,7 +84,10 @@ namespace CodexWindowTools {
 }
 
 function Hide-CodexWindows {
-    param([switch]$MinimizeOnly)
+    param(
+        [switch]$MinimizeOnly,
+        [int[]]$TargetPids = @()
+    )
     Add-WindowApi
     $hidden = New-Object System.Collections.Generic.List[object]
     $callback = [CodexWindowTools.EnumWindowsProc]{
@@ -92,6 +97,7 @@ function Hide-CodexWindows {
             $pid = 0
             $null = [CodexWindowTools.WindowApi]::GetWindowThreadProcessId($hWnd, [ref]$pid)
             if ($pid -le 0) { return $true }
+            if ($TargetPids.Count -gt 0 -and $TargetPids -notcontains $pid) { return $true }
             $p = Get-Process -Id $pid -ErrorAction SilentlyContinue
             if (-not $p -or $p.ProcessName -ne 'Codex') { return $true }
             $titleBuffer = New-Object System.Text.StringBuilder 512
@@ -107,7 +113,10 @@ function Hide-CodexWindows {
 }
 
 function Start-HideWatcher {
-    param([int]$Seconds)
+    param(
+        [int]$Seconds,
+        [string]$TargetPidFilePath = ''
+    )
     $ps = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
     $args = @(
         '-NoProfile',
@@ -119,17 +128,26 @@ function Start-HideWatcher {
         '-LogRoot', $LogRoot,
         '-HideWatchSeconds', ([string]$Seconds)
     )
+    if ($TargetPidFilePath) {
+        $args += @('-TargetPidFile', $TargetPidFilePath)
+    }
     $p = Start-Process -FilePath $ps -ArgumentList $args -WindowStyle Hidden -PassThru
-    Write-RunLog @{ type = 'hide-watcher-start'; pid = $p.Id; seconds = $Seconds }
+    Write-RunLog @{ type = 'hide-watcher-start'; pid = $p.Id; seconds = $Seconds; target_pid_file = $TargetPidFilePath }
 }
 
 function Invoke-HideLoop {
     param([int]$Seconds)
     $deadline = (Get-Date).AddSeconds([Math]::Max(1, $Seconds))
     do {
-        $hidden = Hide-CodexWindows -MinimizeOnly
+        $targetPids = @()
+        if ($TargetPidFile -and (Test-Path -LiteralPath $TargetPidFile -PathType Leaf)) {
+            $targetPids = @(Get-Content -LiteralPath $TargetPidFile -ErrorAction SilentlyContinue | ForEach-Object {
+                if ($_ -match '^\d+$') { [int]$_ }
+            })
+        }
+        $hidden = Hide-CodexWindows -MinimizeOnly -TargetPids $targetPids
         if ($hidden.Count -gt 0) {
-            Write-RunLog @{ type = 'window-suppressed'; count = $hidden.Count; windows = @($hidden) }
+            Write-RunLog @{ type = 'window-suppressed'; count = $hidden.Count; windows = @($hidden); targeted = ($targetPids.Count -gt 0) }
         }
         Start-Sleep -Milliseconds 40
     } while ((Get-Date) -lt $deadline)
@@ -274,7 +292,7 @@ function Ensure-AndroidAutoConnectPersistence {
 function Register-StartupSuppressor {
     if ($NoStartupSuppressor) { return }
     $ps = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-    $runValue = '"{0}" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{1}" -SuppressOnly -CodexHome "{2}" -HideWatchSeconds {3}' -f $ps, $PSCommandPath, $CodexHome, $StartupSuppressSeconds
+    $runValue = '"{0}" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{1}" -SuppressOnly -CodexHome "{2}" -LogRoot "{3}" -HideWatchSeconds {4}' -f $ps, $PSCommandPath, $CodexHome, $LogRoot, $StartupSuppressSeconds
     try {
         New-Item -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Force | Out-Null
         Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'CodexDesktopPopupSuppressor' -Value $runValue
@@ -317,11 +335,15 @@ function Start-CodexDesktopHidden {
         [string]$DesktopExe
     )
     if ($NoDesktopRestart) { return }
-    Start-HideWatcher -Seconds $HideWatchSeconds
     if ($DesktopExe -and (Test-Path -LiteralPath $DesktopExe -PathType Leaf)) {
         try {
             $p = Start-Process -FilePath $DesktopExe -ArgumentList @($WorkspacePath) -WindowStyle Minimized -PassThru
-            $null = Hide-CodexWindows -MinimizeOnly
+            $targetPidPath = Join-Path $LogRoot ('codex-desktop-target-pids-' + $script:RunId + '.txt')
+            Ensure-Dir -Path (Split-Path -Parent $targetPidPath)
+            [string]$p.Id | Set-Content -LiteralPath $targetPidPath -Encoding ASCII
+            $script:DesktopTargetPids = @($p.Id)
+            $null = Hide-CodexWindows -MinimizeOnly -TargetPids @($p.Id)
+            Start-HideWatcher -Seconds $HideWatchSeconds -TargetPidFilePath $targetPidPath
             Write-RunLog @{ type = 'desktop-start'; method = 'exe'; pid = $p.Id; path = $DesktopExe; workspace = $WorkspacePath }
             return
         } catch {
@@ -329,6 +351,7 @@ function Start-CodexDesktopHidden {
         }
     }
     if ($CodexCmd) {
+        Start-HideWatcher -Seconds ([Math]::Min(3, $HideWatchSeconds))
         $null = Invoke-LoggedCommand -FilePath $CodexCmd -ArgumentList @('app',$WorkspacePath) -TimeoutSeconds 8 -Hidden
     }
 }
@@ -501,7 +524,7 @@ Stop-CodexDesktop
 Start-CodexDesktopHidden -CodexCmd $codexCmd -DesktopExe $desktopExe
 Invoke-Prewarm
 Start-AutoContinueWorker
-$hidden = Hide-CodexWindows -MinimizeOnly
+$hidden = Hide-CodexWindows -MinimizeOnly -TargetPids $script:DesktopTargetPids
 Write-RunLog @{ type = 'finish'; hidden_now = $hidden.Count; codex_processes = @((Get-Process -Name Codex -ErrorAction SilentlyContinue | Select-Object Id,Path,MainWindowHandle,MainWindowTitle)) }
 
 "script=$PSCommandPath"
