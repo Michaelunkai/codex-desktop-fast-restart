@@ -16,15 +16,9 @@ Package for `Restart-CodexDesktopFast.ps1`, a Windows PowerShell 5 compatible re
 - Repairs Android ADB warm-connect persistence through the existing `aadb persist` path.
 - Starts bounded hidden `codex resume <session-id>` continuations for recent sessions that look interrupted.
 
-## Live Install Path
+## Package Layout
 
-The live script remains here:
-
-```powershell
-C:\Users\micha\.codex\scripts\Restart-CodexDesktopFast.ps1
-```
-
-This repository keeps a packaged copy under:
+The executable starts the packaged script under:
 
 ```powershell
 .\scripts\Restart-CodexDesktopFast.ps1
@@ -32,13 +26,13 @@ This repository keeps a packaged copy under:
 
 ## Usage
 
-Run the live script:
+Run the packaged executable from its new F-drive location:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Users\micha\.codex\scripts\Restart-CodexDesktopFast.ps1"
+F:\study\AI_ML\AI_and_Machine_Learning\Artificial_Intelligence\cli\codex\codex-desktop-fast-restart\CodexDesktopFastRestart.exe
 ```
 
-Run the packaged copy:
+Run the packaged script directly:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Restart-CodexDesktopFast.ps1"
@@ -64,8 +58,14 @@ Run:
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\tests\Test-RestartCodexDesktopFast.ps1"
 ```
 
-The test checks parser compatibility, self-test output, dry-run logging, copied live script parity, and expected support files.
+The test checks parser compatibility, self-test output, dry-run logging, the packaged executable, and expected support files.
+
+Rebuild the executable:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\launcher\Build-CodexDesktopFastRestart.ps1"
+```
 
 ## Notes
 
-The script is intentionally preserve-first. It copies or invokes existing helpers and does not delete sessions, transcripts, plugins, or configuration. The live script is copied into this project rather than moved so global Codex behavior keeps working.
+The script is intentionally preserve-first. It copies or invokes existing helpers and does not delete sessions, transcripts, plugins, or configuration.

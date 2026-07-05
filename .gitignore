@@ -5,3 +5,10 @@
 .DS_Store
 Thumbs.db
 proof/*.runtime.jsonl
+.dotnet-home/
+.nuget/
+.tmp/
+bin/
+obj/
+launcher/bin/
+launcher/obj/

@@ -29,9 +29,9 @@ $scriptPath = Join-Path $ProjectRoot 'scripts\Restart-CodexDesktopFast.ps1'
 $readmePath = Join-Path $ProjectRoot 'README.md'
 $gitignorePath = Join-Path $ProjectRoot '.gitignore'
 $proofPath = Join-Path $ProjectRoot 'proof\restart-codex-desktop-fast.latest.jsonl'
-$livePath = "$env:USERPROFILE\.codex\scripts\Restart-CodexDesktopFast.ps1"
+$exePath = Join-Path $ProjectRoot 'CodexDesktopFastRestart.exe'
 
-foreach ($path in @($scriptPath, $readmePath, $gitignorePath, $proofPath)) {
+foreach ($path in @($scriptPath, $readmePath, $gitignorePath, $proofPath, $exePath)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         Add-Failure "Missing expected file: $path"
     }
@@ -41,11 +41,10 @@ if (Test-Path -LiteralPath $scriptPath -PathType Leaf) {
     Test-Parser -Path $scriptPath
 }
 
-if ((Test-Path -LiteralPath $scriptPath -PathType Leaf) -and (Test-Path -LiteralPath $livePath -PathType Leaf)) {
-    $packagedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $scriptPath).Hash
-    $liveHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $livePath).Hash
-    if ($packagedHash -ne $liveHash) {
-        Add-Failure "Packaged script hash does not match live script."
+if (Test-Path -LiteralPath $exePath -PathType Leaf) {
+    $exeItem = Get-Item -LiteralPath $exePath
+    if ($exeItem.Length -le 0) {
+        Add-Failure "Executable has zero size: $exePath"
     }
 }
 
@@ -66,6 +65,11 @@ if ($LASTEXITCODE -ne 0) {
 }
 if (($dryOutput -join "`n") -notmatch 'restart-codex-desktop-fast\.jsonl') {
     Add-Failure "Dry run did not report the restart log path."
+}
+
+$exeOutput = & $exePath -SelfTest 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Add-Failure "Executable SelfTest failed: $($exeOutput -join ' | ')"
 }
 
 if ($failures.Count -gt 0) {
