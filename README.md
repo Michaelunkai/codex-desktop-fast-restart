@@ -11,7 +11,7 @@ Package for `Restart-CodexDesktopFast.ps1`, a Windows PowerShell 5 compatible re
 - Force-stops the desktop process immediately instead of waiting on a graceful window close.
 - The executable detaches a hidden PowerShell worker and returns immediately after the worker starts.
 - Starts `codex remote-control` in a hidden bounded worker when enabled.
-- Starts Android reconnect through `aadb connect-warm` in a hidden bounded worker.
+- Starts Android reconnect through a direct 10-second ADB saved-endpoint loop, with `aadb connect-warm` as a parallel hidden fallback.
 - Reuses existing host helpers:
   - `Ensure-CodexAndroidRemote.ps1`
   - `CodexSessionLoadPrewarm.ps1`

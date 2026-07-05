@@ -50,6 +50,15 @@ if (Test-Path -LiteralPath $scriptPath -PathType Leaf) {
     if ($scriptText -notmatch 'android-connect-warm' -or $scriptText -notmatch "'connect-warm'") {
         Add-Failure 'Android reconnect path does not use bounded connect-warm worker.'
     }
+    if ($scriptText -notmatch 'android-fast-reconnect' -or $scriptText -notmatch 'Invoke-AndroidFastReconnect') {
+        Add-Failure 'Android reconnect path does not include the package fast reconnect worker.'
+    }
+    if ($scriptText -notmatch "start-server" -or $scriptText -notmatch 'Get-SavedAndroidEndpoints' -or $scriptText -notmatch "adb.exe") {
+        Add-Failure 'Android fast reconnect worker does not use direct ADB saved-endpoint recovery.'
+    }
+    if ($scriptText -notmatch 'Test-AdbHasAuthorizedDevice' -or $scriptText -notmatch 'saved-endpoint') {
+        Add-Failure 'Android fast reconnect worker does not verify authorized device recovery.'
+    }
     if ($scriptText -notmatch 'Start-WorkerCommand' -or $scriptText -notmatch 'WorkerTimeoutSeconds') {
         Add-Failure 'Restart helper does not contain bounded hidden worker support.'
     }

@@ -253,9 +253,115 @@ function Start-WorkerCommand {
 
 function Invoke-WorkerCommand {
     if (-not $WorkerFilePath) { exit 2 }
+    if ($WorkerType -eq 'android-fast-reconnect') {
+        Invoke-AndroidFastReconnect -TimeoutSeconds $WorkerTimeoutSeconds
+        exit $LASTEXITCODE
+    }
     $result = Invoke-LoggedCommand -FilePath $WorkerFilePath -ArgumentList $WorkerArguments -TimeoutSeconds $WorkerTimeoutSeconds -Hidden
     Write-RunLog @{ type = 'worker-finish'; worker = $WorkerType; ok = [bool]$result.ok; timed_out = [bool]$result.timed_out; exit = $result.exit; file = $WorkerFilePath; args = @($WorkerArguments) }
     if ($result.ok) { exit 0 }
+    exit 1
+}
+
+function Resolve-AdbExe {
+    $candidates = @(
+        (Join-Path $env:LOCALAPPDATA 'Android\platform-tools\adb.exe'),
+        (Join-Path $env:ANDROID_HOME 'platform-tools\adb.exe'),
+        (Join-Path $env:ANDROID_SDK_ROOT 'platform-tools\adb.exe')
+    )
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) { return $candidate }
+    }
+    $cmd = Get-Command adb.exe -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $cmd = Get-Command adb -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    return $null
+}
+
+function Get-SavedAndroidEndpoints {
+    $configPath = Join-Path $env:APPDATA 'CodexAdb\wireless-adb.json'
+    if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) { return @() }
+    try {
+        $raw = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+        $endpoints = @()
+        if ($null -ne $raw.connectEndpoints) { $endpoints += @($raw.connectEndpoints | Where-Object { $_ }) }
+        if ($null -ne $raw.connect) { $endpoints += @($raw.connect | Where-Object { $_ }) }
+        if ($null -ne $raw.lastSerial) { $endpoints += @($raw.lastSerial | Where-Object { $_ }) }
+        return @($endpoints | Where-Object { $_ -match '^\d{1,3}(\.\d{1,3}){3}:\d+$' } | Select-Object -Unique)
+    } catch {
+        Write-RunLog @{ type = 'android-fast-reconnect-config-error'; path = $configPath; error = $_.Exception.Message }
+        return @()
+    }
+}
+
+function Invoke-AdbQuick {
+    param(
+        [string]$AdbExe,
+        [string[]]$Arguments,
+        [int]$TimeoutMilliseconds = 1200
+    )
+    try {
+        $psi = New-Object Diagnostics.ProcessStartInfo
+        $psi.FileName = $AdbExe
+        $psi.Arguments = ($Arguments | ForEach-Object {
+            $arg = [string]$_
+            if ($arg -match '[\s"]') { '"' + ($arg -replace '"', '\"') + '"' } else { $arg }
+        }) -join ' '
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.CreateNoWindow = $true
+        $p = [Diagnostics.Process]::Start($psi)
+        if (-not $p.WaitForExit($TimeoutMilliseconds)) {
+            try { $p.Kill() } catch {}
+            return @{ ok = $false; timed_out = $true; exit = $null; stdout = ''; stderr = '' }
+        }
+        $stdout = $p.StandardOutput.ReadToEnd()
+        $stderr = $p.StandardError.ReadToEnd()
+        return @{ ok = ($p.ExitCode -eq 0); timed_out = $false; exit = $p.ExitCode; stdout = $stdout; stderr = $stderr }
+    } catch {
+        return @{ ok = $false; timed_out = $false; exit = $null; stdout = ''; stderr = $_.Exception.Message }
+    }
+}
+
+function Test-AdbHasAuthorizedDevice {
+    param([string]$AdbExe)
+    $devices = Invoke-AdbQuick -AdbExe $AdbExe -Arguments @('devices') -TimeoutMilliseconds 900
+    if (-not $devices.ok) { return $false }
+    return [bool]($devices.stdout -match '(?m)\sdevice\s*$')
+}
+
+function Invoke-AndroidFastReconnect {
+    param([int]$TimeoutSeconds = 10)
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    $adb = Resolve-AdbExe
+    if (-not $adb) {
+        Write-RunLog @{ type = 'android-fast-reconnect'; ok = $false; error = 'missing adb.exe' }
+        exit 1
+    }
+
+    $null = Invoke-AdbQuick -AdbExe $adb -Arguments @('start-server') -TimeoutMilliseconds 1000
+    if (Test-AdbHasAuthorizedDevice -AdbExe $adb) {
+        Write-RunLog @{ type = 'android-fast-reconnect'; ok = $true; method = 'already-authorized'; elapsed_ms = $sw.ElapsedMilliseconds }
+        exit 0
+    }
+
+    $endpoints = @(Get-SavedAndroidEndpoints)
+    do {
+        foreach ($endpoint in $endpoints) {
+            $remainingMs = ([Math]::Max(250, ([Math]::Max(1, $TimeoutSeconds) * 1000) - [int]$sw.ElapsedMilliseconds))
+            if ($remainingMs -le 250) { break }
+            $connect = Invoke-AdbQuick -AdbExe $adb -Arguments @('connect', $endpoint) -TimeoutMilliseconds ([Math]::Min(1200, $remainingMs))
+            if (Test-AdbHasAuthorizedDevice -AdbExe $adb) {
+                Write-RunLog @{ type = 'android-fast-reconnect'; ok = $true; method = 'saved-endpoint'; endpoint = $endpoint; elapsed_ms = $sw.ElapsedMilliseconds; connect_exit = $connect.exit }
+                exit 0
+            }
+        }
+        Start-Sleep -Milliseconds 150
+    } while ($sw.ElapsedMilliseconds -lt ([Math]::Max(1, $TimeoutSeconds) * 1000))
+
+    Write-RunLog @{ type = 'android-fast-reconnect'; ok = $false; endpoints = @($endpoints); elapsed_ms = $sw.ElapsedMilliseconds }
     exit 1
 }
 
@@ -285,6 +391,7 @@ function Ensure-AndroidAutoConnectPersistence {
         return
     }
     $ps = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+    Start-WorkerCommand -Type 'android-fast-reconnect' -FilePath $PSCommandPath -ArgumentList @() -TimeoutSeconds 10
     Start-WorkerCommand -Type 'android-connect-warm' -FilePath $ps -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$bridge,'connect-warm') -TimeoutSeconds 10
     Start-WorkerCommand -Type 'android-persist' -FilePath $ps -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$bridge,'persist') -TimeoutSeconds 10
 }
