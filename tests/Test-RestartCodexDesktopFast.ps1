@@ -59,6 +59,12 @@ if (Test-Path -LiteralPath $scriptPath -PathType Leaf) {
     if ($scriptText -notmatch 'Test-AdbHasAuthorizedDevice' -or $scriptText -notmatch 'saved-endpoint') {
         Add-Failure 'Android fast reconnect worker does not verify authorized device recovery.'
     }
+    if (-not $scriptText.Contains("@('devices','-l')") -or -not $scriptText.Contains('(?m)\sdevice(?:\s|$)')) {
+        Add-Failure 'Android authorized-device detection does not handle adb devices -l output.'
+    }
+    if (-not $scriptText.Contains("'\.(cmd|bat)$'") -or -not $scriptText.Contains('System32\cmd.exe') -or -not $scriptText.Contains('@(''/d'',''/c'',$FilePath)')) {
+        Add-Failure 'Command runner does not wrap .cmd/.bat commands for hidden worker execution.'
+    }
     if (-not $scriptText.Contains('if ($ArgumentList -and $ArgumentList.Count -gt 0)') -or -not $scriptText.Contains('@(''-WorkerArguments'') + @($ArgumentList)')) {
         Add-Failure 'Worker launcher can still emit a dangling -WorkerArguments parameter for empty-argument workers.'
     }

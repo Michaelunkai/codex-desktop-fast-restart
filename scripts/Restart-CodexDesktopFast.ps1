@@ -196,8 +196,14 @@ function Invoke-LoggedCommand {
     $sw = [Diagnostics.Stopwatch]::StartNew()
     try {
         $psi = New-Object Diagnostics.ProcessStartInfo
-        $psi.FileName = $FilePath
-        $psi.Arguments = ($ArgumentList | ForEach-Object {
+        $effectiveFilePath = $FilePath
+        $effectiveArguments = @($ArgumentList)
+        if ($FilePath -match '\.(cmd|bat)$') {
+            $effectiveFilePath = "$env:SystemRoot\System32\cmd.exe"
+            $effectiveArguments = @('/d','/c',$FilePath) + @($ArgumentList)
+        }
+        $psi.FileName = $effectiveFilePath
+        $psi.Arguments = ($effectiveArguments | ForEach-Object {
             $arg = [string]$_
             if ($arg -match '[\s"]') {
                 '"' + ($arg -replace '"', '\"') + '"'
@@ -213,13 +219,13 @@ function Invoke-LoggedCommand {
         if (-not $p.WaitForExit($TimeoutSeconds * 1000)) {
             try { $p.Kill() } catch {}
             $sw.Stop()
-            Write-RunLog @{ type = 'command-timeout'; file = $FilePath; args = $ArgumentList; elapsed_ms = $sw.ElapsedMilliseconds }
+            Write-RunLog @{ type = 'command-timeout'; file = $FilePath; effective_file = $effectiveFilePath; args = $ArgumentList; elapsed_ms = $sw.ElapsedMilliseconds }
             return @{ ok = $false; exit = $null; timed_out = $true }
         }
         $stdout = $p.StandardOutput.ReadToEnd()
         $stderr = $p.StandardError.ReadToEnd()
         $sw.Stop()
-        Write-RunLog @{ type = 'command'; file = $FilePath; args = $ArgumentList; exit = $p.ExitCode; elapsed_ms = $sw.ElapsedMilliseconds; stdout_tail = ($stdout -split "`r?`n" | Select-Object -Last 8); stderr_tail = ($stderr -split "`r?`n" | Select-Object -Last 8) }
+        Write-RunLog @{ type = 'command'; file = $FilePath; effective_file = $effectiveFilePath; args = $ArgumentList; exit = $p.ExitCode; elapsed_ms = $sw.ElapsedMilliseconds; stdout_tail = ($stdout -split "`r?`n" | Select-Object -Last 8); stderr_tail = ($stderr -split "`r?`n" | Select-Object -Last 8) }
         return @{ ok = ($p.ExitCode -eq 0); exit = $p.ExitCode; timed_out = $false }
     } catch {
         $sw.Stop()
@@ -272,11 +278,10 @@ function Invoke-WorkerCommand {
 }
 
 function Resolve-AdbExe {
-    $candidates = @(
-        (Join-Path $env:LOCALAPPDATA 'Android\platform-tools\adb.exe'),
-        (Join-Path $env:ANDROID_HOME 'platform-tools\adb.exe'),
-        (Join-Path $env:ANDROID_SDK_ROOT 'platform-tools\adb.exe')
-    )
+    $candidates = @()
+    if ($env:LOCALAPPDATA) { $candidates += (Join-Path $env:LOCALAPPDATA 'Android\platform-tools\adb.exe') }
+    if ($env:ANDROID_HOME) { $candidates += (Join-Path $env:ANDROID_HOME 'platform-tools\adb.exe') }
+    if ($env:ANDROID_SDK_ROOT) { $candidates += (Join-Path $env:ANDROID_SDK_ROOT 'platform-tools\adb.exe') }
     foreach ($candidate in $candidates) {
         if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) { return $candidate }
     }
@@ -335,9 +340,9 @@ function Invoke-AdbQuick {
 
 function Test-AdbHasAuthorizedDevice {
     param([string]$AdbExe)
-    $devices = Invoke-AdbQuick -AdbExe $AdbExe -Arguments @('devices') -TimeoutMilliseconds 900
+    $devices = Invoke-AdbQuick -AdbExe $AdbExe -Arguments @('devices','-l') -TimeoutMilliseconds 900
     if (-not $devices.ok) { return $false }
-    return [bool]($devices.stdout -match '(?m)\sdevice\s*$')
+    return [bool]($devices.stdout -match '(?m)\sdevice(?:\s|$)')
 }
 
 function Invoke-AndroidFastReconnect {
