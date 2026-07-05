@@ -84,6 +84,20 @@ if (Test-Path -LiteralPath $scriptPath -PathType Leaf) {
     if ($scriptText -notmatch 'Start-AutoContinueWorker' -or $scriptText -notmatch 'AutoContinueOnly') {
         Add-Failure 'Auto-continue scanning is not detached into a hidden worker.'
     }
+    if ($scriptText -notmatch 'Start-SetupWorker' -or $scriptText -notmatch 'SetupOnly') {
+        Add-Failure 'Startup/config/Android/prewarm setup is not detached into a hidden worker.'
+    }
+    $mainStart = $scriptText.IndexOf('$codexCmd = Resolve-CodexCommand')
+    $mainText = if ($mainStart -ge 0) { $scriptText.Substring($mainStart) } else { '' }
+    foreach ($blockingCall in @('Register-StartupSuppressor', 'Ensure-CodexConfigReady', 'Ensure-AndroidAutoConnectPersistence', 'Invoke-Prewarm')) {
+        $setupOnlyIndex = $mainText.IndexOf('if ($SetupOnly)')
+        $afterSetupOnly = if ($setupOnlyIndex -ge 0) { $mainText.Substring($setupOnlyIndex) } else { $mainText }
+        $mainPathIndex = $afterSetupOnly.IndexOf('Start-SetupWorker')
+        $tail = if ($mainPathIndex -ge 0) { $afterSetupOnly.Substring($mainPathIndex) } else { $afterSetupOnly }
+        if ($tail.Contains($blockingCall)) {
+            Add-Failure "Foreground restart path still calls $blockingCall directly."
+        }
+    }
     if ($scriptText -notmatch 'TimeoutSeconds 8' -or $scriptText -notmatch 'TimeoutSeconds 10') {
         Add-Failure 'Expected bounded remote/Android timeout ceilings were not found.'
     }

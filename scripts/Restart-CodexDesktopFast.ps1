@@ -14,6 +14,7 @@ param(
     [switch]$SuppressOnly,
     [switch]$SelfTest,
     [switch]$AutoContinueOnly,
+    [switch]$SetupOnly,
     [string]$TargetPidFile = '',
     [string]$WorkerType = '',
     [string]$WorkerFilePath = '',
@@ -582,6 +583,27 @@ function Start-AutoContinueWorker {
     }
 }
 
+function Start-SetupWorker {
+    $ps = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+    $args = @(
+        '-NoProfile',
+        '-ExecutionPolicy', 'Bypass',
+        '-WindowStyle', 'Hidden',
+        '-File', $PSCommandPath,
+        '-CodexHome', $CodexHome,
+        '-LogRoot', $LogRoot,
+        '-WorkspacePath', $WorkspacePath,
+        '-SetupOnly'
+    )
+    if ($NoStartupSuppressor) { $args += '-NoStartupSuppressor' }
+    try {
+        $p = Start-Process -FilePath $ps -ArgumentList $args -WindowStyle Hidden -PassThru
+        Write-RunLog @{ type = 'setup-worker-start'; ok = $true; pid = $p.Id }
+    } catch {
+        Write-RunLog @{ type = 'setup-worker-start'; ok = $false; error = $_.Exception.Message }
+    }
+}
+
 function Invoke-SelfTest {
     $codexCmd = Resolve-CodexCommand
     $desktopExe = Resolve-CodexDesktopExe
@@ -625,6 +647,14 @@ if ($AutoContinueOnly) {
     exit 0
 }
 
+if ($SetupOnly) {
+    Register-StartupSuppressor
+    Ensure-CodexConfigReady
+    Ensure-AndroidAutoConnectPersistence
+    Invoke-Prewarm
+    exit 0
+}
+
 if ($SelfTest) {
     Invoke-SelfTest
 }
@@ -633,14 +663,10 @@ $codexCmd = Resolve-CodexCommand
 $desktopExe = Resolve-CodexDesktopExe
 Write-RunLog @{ type = 'start'; script = $PSCommandPath; codex_cmd = $codexCmd; desktop_exe = $desktopExe; workspace = $WorkspacePath }
 
-Register-StartupSuppressor
-Ensure-CodexConfigReady
-Ensure-AndroidAutoConnectPersistence
-Start-HideWatcher -Seconds $HideWatchSeconds
+Start-SetupWorker
 Restart-RemoteControl -CodexCmd $codexCmd
 Stop-CodexDesktop
 Start-CodexDesktopHidden -CodexCmd $codexCmd -DesktopExe $desktopExe
-Invoke-Prewarm
 Start-AutoContinueWorker
 $hidden = Hide-CodexWindows -MinimizeOnly -TargetPids $script:DesktopTargetPids
 Write-RunLog @{ type = 'finish'; hidden_now = $hidden.Count; codex_processes = @((Get-Process -Name Codex -ErrorAction SilentlyContinue | Select-Object Id,Path,MainWindowHandle,MainWindowTitle)) }
