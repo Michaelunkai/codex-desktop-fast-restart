@@ -65,6 +65,16 @@ if (Test-Path -LiteralPath $scriptPath -PathType Leaf) {
     if (-not $scriptText.Contains("'\.(cmd|bat)$'") -or -not $scriptText.Contains('System32\cmd.exe') -or -not $scriptText.Contains('@(''/d'',''/c'',$FilePath)')) {
         Add-Failure 'Command runner does not wrap .cmd/.bat commands for hidden worker execution.'
     }
+    $runnerStart = $scriptText.IndexOf('function Invoke-LoggedCommand')
+    $runnerEnd = $scriptText.IndexOf('function Start-WorkerCommand')
+    if ($runnerStart -lt 0 -or $runnerEnd -lt $runnerStart) {
+        Add-Failure 'Could not locate bounded command runner for static verification.'
+    } else {
+        $runnerText = $scriptText.Substring($runnerStart, $runnerEnd - $runnerStart)
+        if ($runnerText -notmatch 'RedirectStandardOutput\s*=\s*\$false' -or $runnerText -notmatch 'RedirectStandardError\s*=\s*\$false' -or $runnerText -match 'ReadToEnd') {
+            Add-Failure 'Bounded command runner can still block on redirected stdout/stderr pipes.'
+        }
+    }
     if (-not $scriptText.Contains('if ($ArgumentList -and $ArgumentList.Count -gt 0)') -or -not $scriptText.Contains('@(''-WorkerArguments'') + @($ArgumentList)')) {
         Add-Failure 'Worker launcher can still emit a dangling -WorkerArguments parameter for empty-argument workers.'
     }

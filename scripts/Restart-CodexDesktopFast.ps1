@@ -212,8 +212,8 @@ function Invoke-LoggedCommand {
             }
         }) -join ' '
         $psi.UseShellExecute = $false
-        $psi.RedirectStandardOutput = $true
-        $psi.RedirectStandardError = $true
+        $psi.RedirectStandardOutput = $false
+        $psi.RedirectStandardError = $false
         $psi.CreateNoWindow = [bool]$Hidden
         $p = [Diagnostics.Process]::Start($psi)
         if (-not $p.WaitForExit($TimeoutSeconds * 1000)) {
@@ -222,10 +222,8 @@ function Invoke-LoggedCommand {
             Write-RunLog @{ type = 'command-timeout'; file = $FilePath; effective_file = $effectiveFilePath; args = $ArgumentList; elapsed_ms = $sw.ElapsedMilliseconds }
             return @{ ok = $false; exit = $null; timed_out = $true }
         }
-        $stdout = $p.StandardOutput.ReadToEnd()
-        $stderr = $p.StandardError.ReadToEnd()
         $sw.Stop()
-        Write-RunLog @{ type = 'command'; file = $FilePath; effective_file = $effectiveFilePath; args = $ArgumentList; exit = $p.ExitCode; elapsed_ms = $sw.ElapsedMilliseconds; stdout_tail = ($stdout -split "`r?`n" | Select-Object -Last 8); stderr_tail = ($stderr -split "`r?`n" | Select-Object -Last 8) }
+        Write-RunLog @{ type = 'command'; file = $FilePath; effective_file = $effectiveFilePath; args = $ArgumentList; exit = $p.ExitCode; elapsed_ms = $sw.ElapsedMilliseconds }
         return @{ ok = ($p.ExitCode -eq 0); exit = $p.ExitCode; timed_out = $false }
     } catch {
         $sw.Stop()
