@@ -30,8 +30,9 @@ $readmePath = Join-Path $ProjectRoot 'README.md'
 $gitignorePath = Join-Path $ProjectRoot '.gitignore'
 $proofPath = Join-Path $ProjectRoot 'proof\restart-codex-desktop-fast.latest.jsonl'
 $exePath = Join-Path $ProjectRoot 'CodexDesktopFastRestart.exe'
+$launcherPath = Join-Path $ProjectRoot 'launcher\Program.cs'
 
-foreach ($path in @($scriptPath, $readmePath, $gitignorePath, $proofPath, $exePath)) {
+foreach ($path in @($scriptPath, $readmePath, $gitignorePath, $proofPath, $exePath, $launcherPath)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         Add-Failure "Missing expected file: $path"
     }
@@ -69,6 +70,19 @@ if (Test-Path -LiteralPath $scriptPath -PathType Leaf) {
     }
     if ($scriptText -notmatch '\[string\]\$LogRoot' -or $scriptText -notmatch 'PackageRoot' -or $scriptText -notmatch "'logs'") {
         Add-Failure 'Script does not default logs to the package-local logs directory.'
+    }
+}
+
+if (Test-Path -LiteralPath $launcherPath -PathType Leaf) {
+    $launcherText = Get-Content -LiteralPath $launcherPath -Raw
+    if ($launcherText -match 'WaitForExit') {
+        Add-Failure 'Executable launcher still waits for the restart PowerShell worker to finish.'
+    }
+    if ($launcherText -notmatch 'CreateNoWindow = true' -or $launcherText -notmatch '"-WindowStyle"' -or $launcherText -notmatch '"Hidden"') {
+        Add-Failure 'Executable launcher does not force hidden PowerShell startup.'
+    }
+    if ($launcherText -notmatch 'return 0;') {
+        Add-Failure 'Executable launcher does not return immediately after spawning the hidden worker.'
     }
 }
 

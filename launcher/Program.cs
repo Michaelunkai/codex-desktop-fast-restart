@@ -57,8 +57,7 @@ internal static class Program
                 return 3;
             }
 
-            process.WaitForExit();
-            return process.ExitCode;
+            return 0;
         }
     }
 

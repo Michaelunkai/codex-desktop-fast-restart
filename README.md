@@ -8,6 +8,7 @@ Package for `Restart-CodexDesktopFast.ps1`, a Windows PowerShell 5 compatible re
 - Starts a short hidden window suppressor so Codex does not pop in front of other apps during restart.
 - Registers `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\CodexDesktopPopupSuppressor` so startup pop-ups are suppressed after logon.
 - Force-stops the desktop process immediately instead of waiting on a graceful window close.
+- The executable detaches a hidden PowerShell worker and returns immediately after the worker starts.
 - Starts `codex remote-control` in a hidden bounded worker when enabled.
 - Starts Android reconnect through `aadb connect-warm` in a hidden bounded worker.
 - Reuses existing host helpers:
