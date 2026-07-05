@@ -31,8 +31,9 @@ $gitignorePath = Join-Path $ProjectRoot '.gitignore'
 $proofPath = Join-Path $ProjectRoot 'proof\restart-codex-desktop-fast.latest.jsonl'
 $exePath = Join-Path $ProjectRoot 'CodexDesktopFastRestart.exe'
 $launcherPath = Join-Path $ProjectRoot 'launcher\Program.cs'
+$desktopExeCachePath = Join-Path $ProjectRoot 'config\CodexDesktopExePath.txt'
 
-foreach ($path in @($scriptPath, $readmePath, $gitignorePath, $proofPath, $exePath, $launcherPath)) {
+foreach ($path in @($scriptPath, $readmePath, $gitignorePath, $proofPath, $exePath, $launcherPath, $desktopExeCachePath)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         Add-Failure "Missing expected file: $path"
     }
@@ -86,6 +87,16 @@ if (Test-Path -LiteralPath $scriptPath -PathType Leaf) {
     }
     if ($scriptText -notmatch 'Start-SetupWorker' -or $scriptText -notmatch 'SetupOnly') {
         Add-Failure 'Startup/config/Android/prewarm setup is not detached into a hidden worker.'
+    }
+    if ($scriptText -notmatch 'CodexDesktopExePath\.txt' -or $scriptText -notmatch 'Update-CodexDesktopExeCache') {
+        Add-Failure 'Codex Desktop executable resolution is not backed by a package-local cache.'
+    }
+    if ($scriptText -notmatch 'param\(\[switch\]\$AllowSlow\)' -or $scriptText -notmatch 'if \(-not \$AllowSlow\) \{ return \$null \}') {
+        Add-Failure 'Slow AppX desktop resolution is not gated behind an explicit switch.'
+    }
+    $mainResolveIndex = $scriptText.LastIndexOf('$desktopExe = Resolve-CodexDesktopExe')
+    if ($mainResolveIndex -lt 0 -or $scriptText.Substring($mainResolveIndex, [Math]::Min(80, $scriptText.Length - $mainResolveIndex)) -match 'AllowSlow') {
+        Add-Failure 'Foreground restart path can still perform slow AppX desktop resolution.'
     }
     $mainStart = $scriptText.IndexOf('$codexCmd = Resolve-CodexCommand')
     $mainText = if ($mainStart -ge 0) { $scriptText.Substring($mainStart) } else { '' }
@@ -149,6 +160,13 @@ if (Test-Path -LiteralPath $exePath -PathType Leaf) {
     $exeItem = Get-Item -LiteralPath $exePath
     if ($exeItem.Length -le 0) {
         Add-Failure "Executable has zero size: $exePath"
+    }
+}
+
+if (Test-Path -LiteralPath $desktopExeCachePath -PathType Leaf) {
+    $cachedDesktopExe = (Get-Content -LiteralPath $desktopExeCachePath -ErrorAction SilentlyContinue | Select-Object -First 1)
+    if (-not $cachedDesktopExe -or $cachedDesktopExe -notmatch '\\app\\Codex\.exe$') {
+        Add-Failure "Desktop executable cache is missing or malformed: $desktopExeCachePath"
     }
 }
 

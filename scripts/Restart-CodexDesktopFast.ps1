@@ -174,10 +174,19 @@ function Resolve-CodexCommand {
 }
 
 function Resolve-CodexDesktopExe {
+    param([switch]$AllowSlow)
+    $cachePath = Join-Path $script:PackageRoot 'config\CodexDesktopExePath.txt'
+    if (Test-Path -LiteralPath $cachePath -PathType Leaf) {
+        $cached = (Get-Content -LiteralPath $cachePath -ErrorAction SilentlyContinue | Select-Object -First 1)
+        if ($cached -and (Test-Path -LiteralPath $cached -PathType Leaf)) { return $cached }
+    }
+
     $running = Get-Process -Name Codex -ErrorAction SilentlyContinue |
         Where-Object { $_.Path -and $_.Path -match '\\app\\Codex\.exe$' } |
         Select-Object -First 1
     if ($running) { return $running.Path }
+
+    if (-not $AllowSlow) { return $null }
 
     $pkg = Get-AppxPackage -Name OpenAI.Codex -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($pkg -and $pkg.InstallLocation) {
@@ -185,6 +194,19 @@ function Resolve-CodexDesktopExe {
         if (Test-Path -LiteralPath $exe -PathType Leaf) { return $exe }
     }
     return $null
+}
+
+function Update-CodexDesktopExeCache {
+    $exe = Resolve-CodexDesktopExe -AllowSlow
+    if (-not $exe) { return }
+    $cachePath = Join-Path $script:PackageRoot 'config\CodexDesktopExePath.txt'
+    Ensure-Dir -Path (Split-Path -Parent $cachePath)
+    try {
+        $exe | Set-Content -LiteralPath $cachePath -Encoding ASCII
+        Write-RunLog @{ type = 'desktop-exe-cache'; ok = $true; path = $exe; cache = $cachePath }
+    } catch {
+        Write-RunLog @{ type = 'desktop-exe-cache'; ok = $false; path = $exe; cache = $cachePath; error = $_.Exception.Message }
+    }
 }
 
 function Invoke-LoggedCommand {
@@ -648,6 +670,7 @@ if ($AutoContinueOnly) {
 }
 
 if ($SetupOnly) {
+    Update-CodexDesktopExeCache
     Register-StartupSuppressor
     Ensure-CodexConfigReady
     Ensure-AndroidAutoConnectPersistence

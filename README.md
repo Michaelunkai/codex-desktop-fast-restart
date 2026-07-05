@@ -21,6 +21,7 @@ Package for `Restart-CodexDesktopFast.ps1`, a Windows PowerShell 5 compatible re
 - Starts bounded hidden `codex resume <session-id>` continuations from a detached worker for recent sessions that look interrupted.
 - Keeps slow repair and prewarm tasks out of the foreground restart path.
 - Detaches startup suppressor registration, config repair, Android warmup, and prewarm scripts into a hidden setup worker.
+- Uses `.\config\CodexDesktopExePath.txt` before slow AppX lookup so foreground desktop launch resolution stays fast.
 - Writes package runtime logs under `.\logs` by default, not under the C-drive Codex home.
 
 ## Package Layout
