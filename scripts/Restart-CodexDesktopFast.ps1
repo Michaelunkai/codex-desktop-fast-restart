@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$CodexHome = "$env:USERPROFILE\.codex",
+    [string]$LogRoot = '',
     [string]$WorkspacePath = (Get-Location).Path,
     [int]$HideWatchSeconds = 35,
     [int]$StartupSuppressSeconds = 300,
@@ -20,7 +21,11 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
-$script:LogPath = Join-Path $CodexHome 'logs\restart-codex-desktop-fast.jsonl'
+$script:PackageRoot = if ($PSCommandPath) { Split-Path -Parent (Split-Path -Parent $PSCommandPath) } else { (Get-Location).Path }
+if (-not $LogRoot) {
+    $LogRoot = Join-Path $script:PackageRoot 'logs'
+}
+$script:LogPath = Join-Path $LogRoot 'restart-codex-desktop-fast.jsonl'
 $script:RunId = [guid]::NewGuid().ToString()
 
 function Ensure-Dir {
@@ -111,6 +116,7 @@ function Start-HideWatcher {
         '-File', $PSCommandPath,
         '-SuppressOnly',
         '-CodexHome', $CodexHome,
+        '-LogRoot', $LogRoot,
         '-HideWatchSeconds', ([string]$Seconds)
     )
     $p = Start-Process -FilePath $ps -ArgumentList $args -WindowStyle Hidden -PassThru
@@ -213,6 +219,7 @@ function Start-WorkerCommand {
         '-WindowStyle', 'Hidden',
         '-File', $PSCommandPath,
         '-CodexHome', $CodexHome,
+        '-LogRoot', $LogRoot,
         '-WorkerType', $Type,
         '-WorkerFilePath', $FilePath,
         '-WorkerTimeoutSeconds', ([string][Math]::Max(1, $TimeoutSeconds)),
@@ -400,7 +407,7 @@ function Start-AutoContinueSessions {
                 '-ExecutionPolicy','Bypass',
                 '-WindowStyle','Hidden',
                 '-Command',
-                '& "$env:APPDATA\npm\codex.cmd" resume "' + $session.id + '" "' + ($prompt -replace '"','\"') + '" --no-alt-screen *> "$env:USERPROFILE\.codex\logs\auto-continue-' + $session.id + '.log"'
+                '& "' + ($CodexCmd -replace '"','\"') + '" resume "' + $session.id + '" "' + ($prompt -replace '"','\"') + '" --no-alt-screen *> "' + ((Join-Path $LogRoot ('auto-continue-' + $session.id + '.log')) -replace '"','\"') + '"'
             )
             $p = Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList $args -WindowStyle Hidden -PassThru
             Write-RunLog @{ type = 'auto-continue-start'; ok = $true; pid = $p.Id; session_id = $session.id; thread_name = $session.thread_name; transcript = $session.path }
@@ -420,6 +427,7 @@ function Start-AutoContinueWorker {
         '-WindowStyle', 'Hidden',
         '-File', $PSCommandPath,
         '-CodexHome', $CodexHome,
+        '-LogRoot', $LogRoot,
         '-WorkspacePath', $WorkspacePath,
         '-RecentSessionMinutes', ([string]$RecentSessionMinutes),
         '-MaxAutoContinueSessions', ([string]$MaxAutoContinueSessions),

@@ -18,6 +18,7 @@ Package for `Restart-CodexDesktopFast.ps1`, a Windows PowerShell 5 compatible re
 - Repairs Android ADB warm-connect persistence through the existing `aadb persist` path.
 - Starts bounded hidden `codex resume <session-id>` continuations from a detached worker for recent sessions that look interrupted.
 - Keeps slow repair and prewarm tasks out of the foreground restart path.
+- Writes package runtime logs under `.\logs` by default, not under the C-drive Codex home.
 
 ## Package Layout
 
@@ -25,6 +26,12 @@ The executable starts the packaged script under:
 
 ```powershell
 .\scripts\Restart-CodexDesktopFast.ps1
+```
+
+Runtime logs are written under:
+
+```powershell
+.\logs
 ```
 
 ## Usage

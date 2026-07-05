@@ -64,6 +64,12 @@ if (Test-Path -LiteralPath $scriptPath -PathType Leaf) {
     if ($scriptText -notmatch 'ShowWindowAsync' -or $scriptText -notmatch 'MinimizeOnly') {
         Add-Failure 'GUI suppressor/minimize path is missing.'
     }
+    if ($scriptText -match 'USERPROFILE\\\.codex\\logs' -or $scriptText -match '\$env:USERPROFILE\\\.codex\\logs') {
+        Add-Failure 'Script still writes restart or auto-continue logs under the C-drive Codex home.'
+    }
+    if ($scriptText -notmatch '\[string\]\$LogRoot' -or $scriptText -notmatch 'PackageRoot' -or $scriptText -notmatch "'logs'") {
+        Add-Failure 'Script does not default logs to the package-local logs directory.'
+    }
 }
 
 if (Test-Path -LiteralPath $exePath -PathType Leaf) {
