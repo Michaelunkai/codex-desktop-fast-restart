@@ -122,6 +122,9 @@ if (Test-Path -LiteralPath $scriptPath -PathType Leaf) {
     if ($scriptText -notmatch 'TimeoutSeconds 8' -or $scriptText -notmatch 'TimeoutSeconds 10') {
         Add-Failure 'Expected bounded remote/Android timeout ceilings were not found.'
     }
+    if ($scriptText.Contains('Invoke-LoggedCommand -FilePath $CodexCmd -ArgumentList @(''app'',$WorkspacePath)') -or -not $scriptText.Contains('desktop-app-fallback'' -FilePath $CodexCmd -ArgumentList @(''app'',$WorkspacePath) -TimeoutSeconds 3')) {
+        Add-Failure 'Codex app fallback is not detached or capped at three seconds.'
+    }
     if ($scriptText -notmatch 'ElapsedMilliseconds -lt 650' -or $scriptText -match 'ElapsedMilliseconds -lt 850') {
         Add-Failure 'Desktop force-stop path does not keep enough margin under the sub-second close budget.'
     }

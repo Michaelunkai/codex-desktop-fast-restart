@@ -488,7 +488,7 @@ function Start-CodexDesktopHidden {
     }
     if ($CodexCmd) {
         Start-HideWatcher -Seconds ([Math]::Min(3, $HideWatchSeconds))
-        $null = Invoke-LoggedCommand -FilePath $CodexCmd -ArgumentList @('app',$WorkspacePath) -TimeoutSeconds 8 -Hidden
+        Start-WorkerCommand -Type 'desktop-app-fallback' -FilePath $CodexCmd -ArgumentList @('app',$WorkspacePath) -TimeoutSeconds 3
     }
 }
 
