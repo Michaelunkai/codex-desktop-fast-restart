@@ -80,6 +80,14 @@ if (Test-Path -LiteralPath $scriptPath -PathType Leaf) {
     if ($scriptText -notmatch '\[string\]\$TargetPidFile' -or $scriptText -notmatch 'TargetPids' -or $scriptText -notmatch 'DesktopTargetPids') {
         Add-Failure 'GUI suppressor is not scoped to the package-launched Codex process.'
     }
+    if (-not $scriptText.Contains('if ($TargetPidFile)') -or -not $scriptText.Contains('if ($targetPids.Count -eq 0)')) {
+        Add-Failure 'Target-PID watcher can still fall back to broad suppression before the launched PID is known.'
+    }
+    $watcherIndex = $scriptText.IndexOf('Start-HideWatcher -Seconds $HideWatchSeconds -TargetPidFilePath $targetPidPath')
+    $launchIndex = $scriptText.IndexOf('Start-Process -FilePath $DesktopExe')
+    if ($watcherIndex -lt 0 -or $launchIndex -lt 0 -or $watcherIndex -gt $launchIndex) {
+        Add-Failure 'Targeted hide watcher is not started before Codex Desktop launch.'
+    }
     if ($scriptText -match '\$StartupSuppressSeconds\s*=\s*300') {
         Add-Failure 'Startup suppressor still uses a long broad suppression window.'
     }

@@ -6,7 +6,7 @@ Package for `Restart-CodexDesktopFast.ps1`, a Windows PowerShell 5 compatible re
 
 - Restarts Codex Desktop using the installed Windows app path when available.
 - Starts a short hidden window suppressor so Codex does not pop in front of other apps during restart.
-- During restart, the suppressor targets only the Codex process started by this package, so manually opened Codex windows are not continuously forced back down.
+- During restart, the suppressor is pre-armed and targets only the Codex process started by this package, so manually opened Codex windows are not continuously forced back down.
 - Registers `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\CodexDesktopPopupSuppressor` so startup pop-ups are suppressed briefly after logon.
 - Force-stops the desktop process immediately instead of waiting on a graceful window close.
 - The executable detaches a hidden PowerShell worker and returns immediately after the worker starts.

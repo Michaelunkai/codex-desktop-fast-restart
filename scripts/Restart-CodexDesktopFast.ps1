@@ -140,10 +140,16 @@ function Invoke-HideLoop {
     $deadline = (Get-Date).AddSeconds([Math]::Max(1, $Seconds))
     do {
         $targetPids = @()
-        if ($TargetPidFile -and (Test-Path -LiteralPath $TargetPidFile -PathType Leaf)) {
-            $targetPids = @(Get-Content -LiteralPath $TargetPidFile -ErrorAction SilentlyContinue | ForEach-Object {
-                if ($_ -match '^\d+$') { [int]$_ }
-            })
+        if ($TargetPidFile) {
+            if (Test-Path -LiteralPath $TargetPidFile -PathType Leaf) {
+                $targetPids = @(Get-Content -LiteralPath $TargetPidFile -ErrorAction SilentlyContinue | ForEach-Object {
+                    if ($_ -match '^\d+$') { [int]$_ }
+                })
+            }
+            if ($targetPids.Count -eq 0) {
+                Start-Sleep -Milliseconds 20
+                continue
+            }
         }
         $hidden = Hide-CodexWindows -MinimizeOnly -TargetPids $targetPids
         if ($hidden.Count -gt 0) {
@@ -446,13 +452,13 @@ function Start-CodexDesktopHidden {
     if ($NoDesktopRestart) { return }
     if ($DesktopExe -and (Test-Path -LiteralPath $DesktopExe -PathType Leaf)) {
         try {
-            $p = Start-Process -FilePath $DesktopExe -ArgumentList @($WorkspacePath) -WindowStyle Minimized -PassThru
             $targetPidPath = Join-Path $LogRoot ('codex-desktop-target-pids-' + $script:RunId + '.txt')
             Ensure-Dir -Path (Split-Path -Parent $targetPidPath)
+            Start-HideWatcher -Seconds $HideWatchSeconds -TargetPidFilePath $targetPidPath
+            $p = Start-Process -FilePath $DesktopExe -ArgumentList @($WorkspacePath) -WindowStyle Minimized -PassThru
             [string]$p.Id | Set-Content -LiteralPath $targetPidPath -Encoding ASCII
             $script:DesktopTargetPids = @($p.Id)
             $null = Hide-CodexWindows -MinimizeOnly -TargetPids @($p.Id)
-            Start-HideWatcher -Seconds $HideWatchSeconds -TargetPidFilePath $targetPidPath
             Write-RunLog @{ type = 'desktop-start'; method = 'exe'; pid = $p.Id; path = $DesktopExe; workspace = $WorkspacePath }
             return
         } catch {
