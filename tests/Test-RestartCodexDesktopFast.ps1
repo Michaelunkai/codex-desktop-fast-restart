@@ -52,6 +52,9 @@ if (Test-Path -LiteralPath $scriptPath -PathType Leaf) {
     if ($scriptText -notmatch 'Start-WorkerCommand' -or $scriptText -notmatch 'WorkerTimeoutSeconds') {
         Add-Failure 'Restart helper does not contain bounded hidden worker support.'
     }
+    if ($scriptText -notmatch 'Start-AutoContinueWorker' -or $scriptText -notmatch 'AutoContinueOnly') {
+        Add-Failure 'Auto-continue scanning is not detached into a hidden worker.'
+    }
     if ($scriptText -notmatch 'TimeoutSeconds 8' -or $scriptText -notmatch 'TimeoutSeconds 10') {
         Add-Failure 'Expected bounded remote/Android timeout ceilings were not found.'
     }

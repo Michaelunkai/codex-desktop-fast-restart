@@ -16,7 +16,7 @@ Package for `Restart-CodexDesktopFast.ps1`, a Windows PowerShell 5 compatible re
   - `CodexMobileConnectivityPrewarm.ps1`
   - `Test-CodexAndroidStartupHealth.ps1`
 - Repairs Android ADB warm-connect persistence through the existing `aadb persist` path.
-- Starts bounded hidden `codex resume <session-id>` continuations for recent sessions that look interrupted.
+- Starts bounded hidden `codex resume <session-id>` continuations from a detached worker for recent sessions that look interrupted.
 - Keeps slow repair and prewarm tasks out of the foreground restart path.
 
 ## Package Layout

@@ -12,6 +12,7 @@ param(
     [switch]$NoStartupSuppressor,
     [switch]$SuppressOnly,
     [switch]$SelfTest,
+    [switch]$AutoContinueOnly,
     [string]$WorkerType = '',
     [string]$WorkerFilePath = '',
     [int]$WorkerTimeoutSeconds = 10,
@@ -410,6 +411,28 @@ function Start-AutoContinueSessions {
     Write-RunLog @{ type = 'auto-continue-summary'; candidates = $entries.Count; started = $selected.Count; window_minutes = $RecentSessionMinutes; max = $MaxAutoContinueSessions }
 }
 
+function Start-AutoContinueWorker {
+    if ($NoAutoContinue) { return }
+    $ps = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+    $args = @(
+        '-NoProfile',
+        '-ExecutionPolicy', 'Bypass',
+        '-WindowStyle', 'Hidden',
+        '-File', $PSCommandPath,
+        '-CodexHome', $CodexHome,
+        '-WorkspacePath', $WorkspacePath,
+        '-RecentSessionMinutes', ([string]$RecentSessionMinutes),
+        '-MaxAutoContinueSessions', ([string]$MaxAutoContinueSessions),
+        '-AutoContinueOnly'
+    )
+    try {
+        $p = Start-Process -FilePath $ps -ArgumentList $args -WindowStyle Hidden -PassThru
+        Write-RunLog @{ type = 'auto-continue-worker-start'; ok = $true; pid = $p.Id }
+    } catch {
+        Write-RunLog @{ type = 'auto-continue-worker-start'; ok = $false; error = $_.Exception.Message }
+    }
+}
+
 function Invoke-SelfTest {
     $codexCmd = Resolve-CodexCommand
     $desktopExe = Resolve-CodexDesktopExe
@@ -447,6 +470,12 @@ if ($WorkerFilePath) {
     Invoke-WorkerCommand
 }
 
+if ($AutoContinueOnly) {
+    $codexCmd = Resolve-CodexCommand
+    Start-AutoContinueSessions -CodexCmd $codexCmd
+    exit 0
+}
+
 if ($SelfTest) {
     Invoke-SelfTest
 }
@@ -463,7 +492,7 @@ Restart-RemoteControl -CodexCmd $codexCmd
 Stop-CodexDesktop
 Start-CodexDesktopHidden -CodexCmd $codexCmd -DesktopExe $desktopExe
 Invoke-Prewarm
-Start-AutoContinueSessions -CodexCmd $codexCmd
+Start-AutoContinueWorker
 $hidden = Hide-CodexWindows -MinimizeOnly
 Write-RunLog @{ type = 'finish'; hidden_now = $hidden.Count; codex_processes = @((Get-Process -Name Codex -ErrorAction SilentlyContinue | Select-Object Id,Path,MainWindowHandle,MainWindowTitle)) }
 
