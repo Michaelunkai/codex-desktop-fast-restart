@@ -58,6 +58,9 @@ if (Test-Path -LiteralPath $scriptPath -PathType Leaf) {
     if ($scriptText -notmatch 'function ConvertTo-ProcessArgument' -or $scriptText -notmatch 'function Join-ProcessArguments') {
         Add-Failure 'Process launch argument quoting helpers are missing.'
     }
+    if ($scriptText -notmatch 'Text\.StringBuilder' -or $scriptText -notmatch '\$backslashes \* 2' -or $scriptText -notmatch '\$backslashes = 0') {
+        Add-Failure 'PowerShell process argument quoting is not backslash-aware.'
+    }
     if ($scriptText -match 'Start-Process[^\r\n]+-ArgumentList \$args' -or $scriptText -match 'Start-Process[^\r\n]+-ArgumentList @\(\$WorkspacePath\)') {
         Add-Failure 'Start-Process still uses raw argument arrays for worker or workspace paths.'
     }
@@ -172,6 +175,9 @@ if (Test-Path -LiteralPath $launcherPath -PathType Leaf) {
     }
     if ($launcherText -notmatch 'CreateNoWindow = true' -or $launcherText -notmatch '"-WindowStyle"' -or $launcherText -notmatch '"Hidden"') {
         Add-Failure 'Executable launcher does not force hidden PowerShell startup.'
+    }
+    if ($launcherText -notmatch 'backslashes \* 2' -or $launcherText -match 'Replace\(@"?\\""?') {
+        Add-Failure 'Executable launcher argument quoting is not backslash-aware.'
     }
     if ($launcherText -notmatch 'return 0;') {
         Add-Failure 'Executable launcher does not return immediately after spawning the hidden worker.'

@@ -68,8 +68,44 @@ internal static class Program
             builder.Append(' ');
         }
 
+        if (value.IndexOfAny(new[] { ' ', '\t', '"' }) < 0)
+        {
+            builder.Append(value);
+            return;
+        }
+
         builder.Append('"');
-        builder.Append(value.Replace("\"", "\\\""));
+        var backslashes = 0;
+        foreach (var ch in value)
+        {
+            if (ch == '\\')
+            {
+                backslashes++;
+                continue;
+            }
+
+            if (ch == '"')
+            {
+                builder.Append('\\', backslashes * 2);
+                builder.Append("\\\"");
+                backslashes = 0;
+                continue;
+            }
+
+            if (backslashes > 0)
+            {
+                builder.Append('\\', backslashes);
+                backslashes = 0;
+            }
+
+            builder.Append(ch);
+        }
+
+        if (backslashes > 0)
+        {
+            builder.Append('\\', backslashes * 2);
+        }
+
         builder.Append('"');
     }
 }

@@ -53,7 +53,29 @@ function ConvertTo-ProcessArgument {
     param([string]$Value)
     if ($null -eq $Value) { return '""' }
     if ($Value -notmatch '[\s"]') { return $Value }
-    return '"' + ($Value -replace '"', '\"') + '"'
+    $builder = New-Object Text.StringBuilder
+    [void]$builder.Append('"')
+    $backslashes = 0
+    foreach ($ch in $Value.ToCharArray()) {
+        if ($ch -eq '\') {
+            $backslashes++
+            continue
+        }
+        if ($ch -eq '"') {
+            if ($backslashes -gt 0) { [void]$builder.Append('\' * ($backslashes * 2)) }
+            [void]$builder.Append('\"')
+            $backslashes = 0
+            continue
+        }
+        if ($backslashes -gt 0) {
+            [void]$builder.Append('\' * $backslashes)
+            $backslashes = 0
+        }
+        [void]$builder.Append($ch)
+    }
+    if ($backslashes -gt 0) { [void]$builder.Append('\' * ($backslashes * 2)) }
+    [void]$builder.Append('"')
+    return $builder.ToString()
 }
 
 function Join-ProcessArguments {
