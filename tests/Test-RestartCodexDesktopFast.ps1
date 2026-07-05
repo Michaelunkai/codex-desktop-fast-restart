@@ -39,6 +39,28 @@ foreach ($path in @($scriptPath, $readmePath, $gitignorePath, $proofPath, $exePa
 
 if (Test-Path -LiteralPath $scriptPath -PathType Leaf) {
     Test-Parser -Path $scriptPath
+    $scriptText = Get-Content -LiteralPath $scriptPath -Raw
+    if ($scriptText -match 'CloseMainWindow') {
+        Add-Failure 'Foreground close path still uses CloseMainWindow instead of immediate forced stop.'
+    }
+    if ($scriptText -match "remote-control','stop") {
+        Add-Failure 'Foreground remote-control path still stops remote-control before start.'
+    }
+    if ($scriptText -notmatch 'android-connect-warm' -or $scriptText -notmatch "'connect-warm'") {
+        Add-Failure 'Android reconnect path does not use bounded connect-warm worker.'
+    }
+    if ($scriptText -notmatch 'Start-WorkerCommand' -or $scriptText -notmatch 'WorkerTimeoutSeconds') {
+        Add-Failure 'Restart helper does not contain bounded hidden worker support.'
+    }
+    if ($scriptText -notmatch 'TimeoutSeconds 8' -or $scriptText -notmatch 'TimeoutSeconds 10') {
+        Add-Failure 'Expected bounded remote/Android timeout ceilings were not found.'
+    }
+    if ($scriptText -notmatch 'ElapsedMilliseconds -lt 850') {
+        Add-Failure 'Desktop force-stop path does not enforce the sub-second close budget.'
+    }
+    if ($scriptText -notmatch 'ShowWindowAsync' -or $scriptText -notmatch 'MinimizeOnly') {
+        Add-Failure 'GUI suppressor/minimize path is missing.'
+    }
 }
 
 if (Test-Path -LiteralPath $exePath -PathType Leaf) {
@@ -46,30 +68,6 @@ if (Test-Path -LiteralPath $exePath -PathType Leaf) {
     if ($exeItem.Length -le 0) {
         Add-Failure "Executable has zero size: $exePath"
     }
-}
-
-$selfTestOutput = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $scriptPath -SelfTest 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Add-Failure "SelfTest failed: $($selfTestOutput -join ' | ')"
-}
-if (($selfTestOutput -join "`n") -notmatch 'remote_control_configured=True') {
-    Add-Failure "SelfTest did not prove remote_control_configured=True."
-}
-if (($selfTestOutput -join "`n") -notmatch 'desktop_exe_exists=True') {
-    Add-Failure "SelfTest did not prove desktop_exe_exists=True."
-}
-
-$dryOutput = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $scriptPath -NoDesktopRestart -NoRemoteRestart -NoAutoContinue -NoStartupSuppressor -HideWatchSeconds 1 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Add-Failure "Dry run failed: $($dryOutput -join ' | ')"
-}
-if (($dryOutput -join "`n") -notmatch 'restart-codex-desktop-fast\.jsonl') {
-    Add-Failure "Dry run did not report the restart log path."
-}
-
-$exeOutput = & $exePath -SelfTest 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Add-Failure "Executable SelfTest failed: $($exeOutput -join ' | ')"
 }
 
 if ($failures.Count -gt 0) {

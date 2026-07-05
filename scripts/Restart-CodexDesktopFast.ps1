@@ -11,7 +11,11 @@ param(
     [switch]$NoAutoContinue,
     [switch]$NoStartupSuppressor,
     [switch]$SuppressOnly,
-    [switch]$SelfTest
+    [switch]$SelfTest,
+    [string]$WorkerType = '',
+    [string]$WorkerFilePath = '',
+    [int]$WorkerTimeoutSeconds = 10,
+    [string[]]$WorkerArguments = @()
 )
 
 $ErrorActionPreference = 'Continue'
@@ -86,7 +90,7 @@ function Hide-CodexWindows {
             if (-not $p -or $p.ProcessName -ne 'Codex') { return $true }
             $titleBuffer = New-Object System.Text.StringBuilder 512
             $null = [CodexWindowTools.WindowApi]::GetWindowText($hWnd, $titleBuffer, $titleBuffer.Capacity)
-            $show = if ($MinimizeOnly) { 6 } else { 0 }
+            $show = if ($MinimizeOnly) { 7 } else { 0 }
             $null = [CodexWindowTools.WindowApi]::ShowWindowAsync($hWnd, $show)
             $hidden.Add([pscustomobject]@{ pid = $pid; handle = $hWnd.ToInt64(); title = $titleBuffer.ToString(); action = $(if ($MinimizeOnly) { 'minimize' } else { 'hide' }) }) | Out-Null
         } catch {}
@@ -116,11 +120,11 @@ function Invoke-HideLoop {
     param([int]$Seconds)
     $deadline = (Get-Date).AddSeconds([Math]::Max(1, $Seconds))
     do {
-        $hidden = Hide-CodexWindows
+        $hidden = Hide-CodexWindows -MinimizeOnly
         if ($hidden.Count -gt 0) {
             Write-RunLog @{ type = 'window-suppressed'; count = $hidden.Count; windows = @($hidden) }
         }
-        Start-Sleep -Milliseconds 250
+        Start-Sleep -Milliseconds 40
     } while ((Get-Date) -lt $deadline)
 }
 
@@ -193,12 +197,47 @@ function Invoke-LoggedCommand {
     }
 }
 
+function Start-WorkerCommand {
+    param(
+        [string]$Type,
+        [string]$FilePath,
+        [string[]]$ArgumentList,
+        [int]$TimeoutSeconds = 10
+    )
+    if (-not $FilePath) { return }
+    $ps = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+    $args = @(
+        '-NoProfile',
+        '-ExecutionPolicy', 'Bypass',
+        '-WindowStyle', 'Hidden',
+        '-File', $PSCommandPath,
+        '-CodexHome', $CodexHome,
+        '-WorkerType', $Type,
+        '-WorkerFilePath', $FilePath,
+        '-WorkerTimeoutSeconds', ([string][Math]::Max(1, $TimeoutSeconds)),
+        '-WorkerArguments'
+    ) + @($ArgumentList)
+    try {
+        $p = Start-Process -FilePath $ps -ArgumentList $args -WindowStyle Hidden -PassThru
+        Write-RunLog @{ type = 'worker-start'; worker = $Type; pid = $p.Id; file = $FilePath; args = @($ArgumentList); timeout_seconds = $TimeoutSeconds }
+    } catch {
+        Write-RunLog @{ type = 'worker-start-failed'; worker = $Type; file = $FilePath; args = @($ArgumentList); error = $_.Exception.Message }
+    }
+}
+
+function Invoke-WorkerCommand {
+    if (-not $WorkerFilePath) { exit 2 }
+    $result = Invoke-LoggedCommand -FilePath $WorkerFilePath -ArgumentList $WorkerArguments -TimeoutSeconds $WorkerTimeoutSeconds -Hidden
+    Write-RunLog @{ type = 'worker-finish'; worker = $WorkerType; ok = [bool]$result.ok; timed_out = [bool]$result.timed_out; exit = $result.exit; file = $WorkerFilePath; args = @($WorkerArguments) }
+    if ($result.ok) { exit 0 }
+    exit 1
+}
+
 function Ensure-CodexConfigReady {
     $guard = Join-Path $CodexHome 'tools\codex-android-remote\Ensure-CodexAndroidRemote.ps1'
     if (Test-Path -LiteralPath $guard -PathType Leaf) {
         $ps = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-        $null = Invoke-LoggedCommand -FilePath $ps -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$guard) -TimeoutSeconds 25 -Hidden
-        return
+        Start-WorkerCommand -Type 'config-guard' -FilePath $ps -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$guard) -TimeoutSeconds 10
     }
 
     $configPath = Join-Path $CodexHome 'config.toml'
@@ -220,7 +259,8 @@ function Ensure-AndroidAutoConnectPersistence {
         return
     }
     $ps = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-    $null = Invoke-LoggedCommand -FilePath $ps -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$bridge,'persist') -TimeoutSeconds 35 -Hidden
+    Start-WorkerCommand -Type 'android-connect-warm' -FilePath $ps -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$bridge,'connect-warm') -TimeoutSeconds 10
+    Start-WorkerCommand -Type 'android-persist' -FilePath $ps -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$bridge,'persist') -TimeoutSeconds 10
 }
 
 function Register-StartupSuppressor {
@@ -239,24 +279,14 @@ function Register-StartupSuppressor {
 function Restart-RemoteControl {
     param([string]$CodexCmd)
     if ($NoRemoteRestart -or -not $CodexCmd) { return }
-    $null = Invoke-LoggedCommand -FilePath $CodexCmd -ArgumentList @('remote-control','stop','--json') -TimeoutSeconds 20 -Hidden
-    $start = Invoke-LoggedCommand -FilePath $CodexCmd -ArgumentList @('remote-control','start','--json') -TimeoutSeconds 30 -Hidden
-    Write-RunLog @{ type = 'remote-control-restart'; ok = [bool]$start.ok }
+    Start-WorkerCommand -Type 'remote-control-start' -FilePath $CodexCmd -ArgumentList @('remote-control','start','--json') -TimeoutSeconds 8
 }
 
 function Stop-CodexDesktop {
     if ($NoDesktopRestart) { return }
+    $sw = [Diagnostics.Stopwatch]::StartNew()
     $processes = @(Get-Process -Name Codex -ErrorAction SilentlyContinue)
     foreach ($p in $processes) {
-        try {
-            if ($p.MainWindowHandle -and $p.MainWindowHandle -ne 0) {
-                $null = $p.CloseMainWindow()
-            }
-        } catch {}
-    }
-    Start-Sleep -Milliseconds 900
-    $remaining = @(Get-Process -Name Codex -ErrorAction SilentlyContinue)
-    foreach ($p in $remaining) {
         try {
             Stop-Process -Id $p.Id -Force -ErrorAction Stop
             Write-RunLog @{ type = 'process-killed'; process = $p.ProcessName; pid = $p.Id; path = $p.Path }
@@ -264,6 +294,13 @@ function Stop-CodexDesktop {
             Write-RunLog @{ type = 'process-kill-failed'; process = $p.ProcessName; pid = $p.Id; error = $_.Exception.Message }
         }
     }
+    do {
+        $remaining = @(Get-Process -Name Codex -ErrorAction SilentlyContinue)
+        if ($remaining.Count -eq 0) { break }
+        Start-Sleep -Milliseconds 25
+    } while ($sw.ElapsedMilliseconds -lt 850)
+    $sw.Stop()
+    Write-RunLog @{ type = 'process-stop-summary'; elapsed_ms = $sw.ElapsedMilliseconds; remaining = @($remaining | Select-Object Id,ProcessName,Path) }
 }
 
 function Start-CodexDesktopHidden {
@@ -276,6 +313,7 @@ function Start-CodexDesktopHidden {
     if ($DesktopExe -and (Test-Path -LiteralPath $DesktopExe -PathType Leaf)) {
         try {
             $p = Start-Process -FilePath $DesktopExe -ArgumentList @($WorkspacePath) -WindowStyle Minimized -PassThru
+            $null = Hide-CodexWindows -MinimizeOnly
             Write-RunLog @{ type = 'desktop-start'; method = 'exe'; pid = $p.Id; path = $DesktopExe; workspace = $WorkspacePath }
             return
         } catch {
@@ -296,7 +334,7 @@ function Invoke-Prewarm {
     )
     foreach ($script in $scripts) {
         if (Test-Path -LiteralPath $script -PathType Leaf) {
-            $null = Invoke-LoggedCommand -FilePath $ps -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$script) -TimeoutSeconds 60 -Hidden
+            Start-WorkerCommand -Type ('prewarm-' + [IO.Path]::GetFileNameWithoutExtension($script)) -FilePath $ps -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$script) -TimeoutSeconds 10
         } else {
             Write-RunLog @{ type = 'prewarm-missing'; path = $script }
         }
@@ -405,6 +443,10 @@ if ($SuppressOnly) {
     exit 0
 }
 
+if ($WorkerFilePath) {
+    Invoke-WorkerCommand
+}
+
 if ($SelfTest) {
     Invoke-SelfTest
 }
@@ -422,8 +464,7 @@ Stop-CodexDesktop
 Start-CodexDesktopHidden -CodexCmd $codexCmd -DesktopExe $desktopExe
 Invoke-Prewarm
 Start-AutoContinueSessions -CodexCmd $codexCmd
-Start-Sleep -Milliseconds 750
-$hidden = Hide-CodexWindows
+$hidden = Hide-CodexWindows -MinimizeOnly
 Write-RunLog @{ type = 'finish'; hidden_now = $hidden.Count; codex_processes = @((Get-Process -Name Codex -ErrorAction SilentlyContinue | Select-Object Id,Path,MainWindowHandle,MainWindowTitle)) }
 
 "script=$PSCommandPath"

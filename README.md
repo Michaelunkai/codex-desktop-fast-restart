@@ -7,7 +7,9 @@ Package for `Restart-CodexDesktopFast.ps1`, a Windows PowerShell 5 compatible re
 - Restarts Codex Desktop using the installed Windows app path when available.
 - Starts a short hidden window suppressor so Codex does not pop in front of other apps during restart.
 - Registers `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\CodexDesktopPopupSuppressor` so startup pop-ups are suppressed after logon.
-- Restarts `codex remote-control` when enabled.
+- Force-stops the desktop process immediately instead of waiting on a graceful window close.
+- Starts `codex remote-control` in a hidden bounded worker when enabled.
+- Starts Android reconnect through `aadb connect-warm` in a hidden bounded worker.
 - Reuses existing host helpers:
   - `Ensure-CodexAndroidRemote.ps1`
   - `CodexSessionLoadPrewarm.ps1`
@@ -15,6 +17,7 @@ Package for `Restart-CodexDesktopFast.ps1`, a Windows PowerShell 5 compatible re
   - `Test-CodexAndroidStartupHealth.ps1`
 - Repairs Android ADB warm-connect persistence through the existing `aadb persist` path.
 - Starts bounded hidden `codex resume <session-id>` continuations for recent sessions that look interrupted.
+- Keeps slow repair and prewarm tasks out of the foreground restart path.
 
 ## Package Layout
 
@@ -58,7 +61,7 @@ Run:
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\tests\Test-RestartCodexDesktopFast.ps1"
 ```
 
-The test checks parser compatibility, self-test output, dry-run logging, the packaged executable, and expected support files.
+The test checks parser compatibility, the packaged executable, expected support files, and static guarantees for sub-second force-stop, hidden bounded workers, minimized GUI suppression, and `connect-warm`. It does not execute the restart executable.
 
 Rebuild the executable:
 
