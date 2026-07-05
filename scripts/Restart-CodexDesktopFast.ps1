@@ -44,14 +44,9 @@ function Write-RunLog {
     $Fields['timestamp'] = (Get-Date).ToString('o')
     $Fields['run_id'] = $script:RunId
     $line = ($Fields | ConvertTo-Json -Compress -Depth 10)
-    for ($i = 0; $i -lt 20; $i++) {
-        try {
-            $line | Add-Content -LiteralPath $script:LogPath -Encoding UTF8 -ErrorAction Stop
-            return
-        } catch {
-            Start-Sleep -Milliseconds (50 + ($i * 25))
-        }
-    }
+    try {
+        [IO.File]::AppendAllText($script:LogPath, $line + [Environment]::NewLine, [Text.Encoding]::UTF8)
+    } catch {}
 }
 
 function Add-WindowApi {

@@ -45,6 +45,16 @@ if (Test-Path -LiteralPath $scriptPath -PathType Leaf) {
     if ($scriptText -match 'CloseMainWindow') {
         Add-Failure 'Foreground close path still uses CloseMainWindow instead of immediate forced stop.'
     }
+    $logStart = $scriptText.IndexOf('function Write-RunLog')
+    $logEnd = $scriptText.IndexOf('function Add-WindowApi')
+    if ($logStart -lt 0 -or $logEnd -lt $logStart) {
+        Add-Failure 'Could not locate Write-RunLog for static verification.'
+    } else {
+        $logText = $scriptText.Substring($logStart, $logEnd - $logStart)
+        if ($logText -match 'Start-Sleep' -or $logText -match 'for \(' -or $logText -notmatch 'AppendAllText') {
+            Add-Failure 'Write-RunLog can still block on retry/sleep instead of best-effort append.'
+        }
+    }
     if ($scriptText -match "remote-control','stop") {
         Add-Failure 'Foreground remote-control path still stops remote-control before start.'
     }
