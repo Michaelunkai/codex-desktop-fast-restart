@@ -1,0 +1,7 @@
+*.log
+*.tmp
+*.bak
+*.bak-*
+.DS_Store
+Thumbs.db
+proof/*.runtime.jsonl
